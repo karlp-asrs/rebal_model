@@ -45,23 +45,23 @@ mu_nocost=.6*mustock+.4*mubond
 gdnocost=c(100,100*exp(cumsum(mu_nocost)))
 bbgdat$gdnocost=gdnocost
 
-tcost=.002
+tcost=0 #.002
 
 #calculate a monthly rebalance with trading cost
 rebalfreq=1
 tcostvec=vector()
 gds=gdb=vector()
-gdb[1]=60
-gbs[1]=40
+gdb[1]=40
+gds[1]=60
 for (i in 1:length(mustock)) {
   pb=gdb[i]
-  ps=bds[i]
+  ps=gds[i]
   m=i+1
   if(0==(m%%rebalfreq)) {
     rebalamt=ps-(.6*(ps+pb))
     pb=pb+rebalamt
     ps=ps-rebalamt
-    tcostvec[i]=tcost*rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
     pb=pb-.4*tcostvec[i]
     ps=ps-.6*tcostvec[i]
   }
@@ -77,17 +77,17 @@ mumthly=diff(log(gdmthly))
 rebalfreq=12
 tcostvec=vector()
 gds=gdb=vector()
-gdb[1]=60
-gbs[1]=40
+gdb[1]=40
+gds[1]=60
 for (i in 1:length(mustock)) {
   pb=gdb[i]
-  ps=bds[i]
+  ps=gds[i]
   m=i+1
   if(0==(m%%rebalfreq)) {
     rebalamt=ps-(.6*(ps+pb))
     pb=pb+rebalamt
     ps=ps-rebalamt
-    tcostvec[i]=tcost*rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
     pb=pb-.4*tcostvec[i]
     ps=ps-.6*tcostvec[i]
   }
@@ -97,48 +97,53 @@ for (i in 1:length(mustock)) {
   gds[m]=gds[i]*exp(mustock[i])
 }
 gdyrly=gdb+gds
-muyrly=diff(log(gdmthly))
+muyrly=diff(log(gdyrly))
 ssyrly=gds/gdyrly
 
+df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=gdnocost,
+               Mthly_rebal=gdmthly,Yrly_rebal=gdyrly,
+               Buy_hold=bbgdat$gdbuyhold)
+df1long=gather(df1,"Strategy","NAV",-Date)
+ggplot(df1long,aes(x=Date,y=NAV,color=Strategy),group_by=Strategy)+geom_line()
+```
 
 
 
-
-
-
-R2K=diff(log(zoo(bbgdat$'RU20INTR Index',bbgdat$date)))
-gdr2k=exp(cumsum(R2K))
-MSCI_Small=diff(log(zoo(bbgdat$'M1USSC Index',bbgdat$date)))
-gdmsci=exp(cumsum(MSCI_Small))
-sp600=diff(log(zoo(bbgdat$'SPTRSMCP Index',bbgdat$date)))
-gdsp600=exp(cumsum(sp600))
-delta_return=sp600-R2K
-roll_one_delta=rollapply(delta_return,12,sum,align="right")
-roll_one_df=data.frame(Date=index(roll_one_delta),Return=coredata(roll_one_delta))
-roll_one_df$Month=as.factor(month(roll_one_df$Date))
-gddiffmsci=gdsp600-gdmsci
-gddiffr2k=gdsp600-gdr2k
-gd_df=data.frame(SP600=gdsp600,R2K=gdr2k,MSCI=gdmsci,
-                 SP600_minus_R2K=gddiffr2k,SP600_minus_MSCI=gddiffmsci)
-gd_df$Date=as.Date(rownames(gd_df),format="%Y-%m-%d")
-#ggplot(roll_one_df,aes(x=Date,y=Return))+geom_point()
-#ggplot(roll_one_df,aes(x=Month,y=Return))+geom_boxplot()
-#ggplot(gd_df,aes(x=Date,y=gddiff*100))+geom_point()
-gd_dflong=gather(gd_df,"Index","Growth_of_Dollar",-Date)
-ggplot(gd_dflong,aes(x=Date,y=Growth_of_Dollar,color=Index),group_by=Index)+geom_line()+
-  ylab("Growth of Dollar")+ggtitle("Comparative Returns Small Cap Indices")+xlab("")
-delta_df=data.frame(Date=index(delta_return),Return=coredata(delta_return))
-delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
-delta_df$Month=as.factor(month(delta_df$Date))
-#ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
-ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
-  ggtitle("SP600 minus R2K")+ylab("Monthly Return Difference")+xlab("")
-
-mdelta_return=sp600-MSCI_Small
-delta_df=data.frame(Date=index(mdelta_return),Return=coredata(mdelta_return))
-delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
-delta_df$Month=as.factor(month(delta_df$Date))
-#ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
-ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
-  ggtitle("SP600 minus MSCI Small")+ylab("Monthly Return Difference")+xlab("")
+```{r, echo=FALSE}
+# 
+# R2K=diff(log(zoo(bbgdat$'RU20INTR Index',bbgdat$date)))
+# gdr2k=exp(cumsum(R2K))
+# MSCI_Small=diff(log(zoo(bbgdat$'M1USSC Index',bbgdat$date)))
+# gdmsci=exp(cumsum(MSCI_Small))
+# sp600=diff(log(zoo(bbgdat$'SPTRSMCP Index',bbgdat$date)))
+# gdsp600=exp(cumsum(sp600))
+# delta_return=sp600-R2K
+# roll_one_delta=rollapply(delta_return,12,sum,align="right")
+# roll_one_df=data.frame(Date=index(roll_one_delta),Return=coredata(roll_one_delta))
+# roll_one_df$Month=as.factor(month(roll_one_df$Date))
+# gddiffmsci=gdsp600-gdmsci
+# gddiffr2k=gdsp600-gdr2k
+# gd_df=data.frame(SP600=gdsp600,R2K=gdr2k,MSCI=gdmsci,
+#                  SP600_minus_R2K=gddiffr2k,SP600_minus_MSCI=gddiffmsci)
+# gd_df$Date=as.Date(rownames(gd_df),format="%Y-%m-%d")
+# #ggplot(roll_one_df,aes(x=Date,y=Return))+geom_point()
+# #ggplot(roll_one_df,aes(x=Month,y=Return))+geom_boxplot()
+# #ggplot(gd_df,aes(x=Date,y=gddiff*100))+geom_point()
+# gd_dflong=gather(gd_df,"Index","Growth_of_Dollar",-Date)
+# ggplot(gd_dflong,aes(x=Date,y=Growth_of_Dollar,color=Index),group_by=Index)+geom_line()+
+#   ylab("Growth of Dollar")+ggtitle("Comparative Returns Small Cap Indices")+xlab("")
+# delta_df=data.frame(Date=index(delta_return),Return=coredata(delta_return))
+# delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
+# delta_df$Month=as.factor(month(delta_df$Date))
+# #ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
+# ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
+#   ggtitle("SP600 minus R2K")+ylab("Monthly Return Difference")+xlab("")
+# 
+# mdelta_return=sp600-MSCI_Small
+# delta_df=data.frame(Date=index(mdelta_return),Return=coredata(mdelta_return))
+# delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
+# delta_df$Month=as.factor(month(delta_df$Date))
+# #ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
+# ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
+#   ggtitle("SP600 minus MSCI Small")+ylab("Monthly Return Difference")+xlab("")
 ```
