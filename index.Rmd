@@ -7,11 +7,11 @@ output:
     keep_md: TRUE
 ---
 
-Most experts recommend periodic rebalancing of a portfolio.  The advantages of rebalancing including maintaining a portfolio at target risk parameteres and potential gains through an enforced "buy low/sell high" discipline.  The tradeoff comes with transaction costs and, if momentum is a market feature, risks of transacting too early causing losses in down trending markets or missing gains in up trending markets.
+Most experts recommend periodic rebalancing of a portfolio.  The advantages of rebalancing including maintaining a portfolio at target risk parameters and potential gains through an enforced "buy low/sell high" discipline.  The tradeoff comes with transaction costs and, if momentum is a market feature, risks of transacting too early causing losses in down trending markets or missing gains in up trending markets.
 
 Vanguard conducted a helpful study of this concluding, in typical Vanguard fashion, that less is more.  They find rebalancing about once a year captures the benefit and avoids higher costs of increased frequency.  The study is found [here](https://www.vanguard.com/pdf/icrpr.pdf).
 
-We will update this work with more recent data (the Vanguard study uses data ending in 2009) and will consider if trend analysis is beneficial.  We will model a 60/40 portfolio of global stocks and US bonds.  Our objective is to model rebalancing considering transaction costs.  We will review rebalance periods, rebalance bands and trend parameters.  We don't look at taxes assuming a no 
+We will update this work with more recent data (the Vanguard study uses data ending in 2009) and will consider if trend analysis is beneficial.  We will model a 60/40 portfolio of global stocks and US bonds.  Our objective is to model rebalancing considering transaction costs.  We will review rebalance periods, rebalance bands and trend parameters.  We don't look at taxes assuming a tax free institutional investor.  *Taxes are major consideration for individual investors and this analysis only applies to the much simpler situation of a tax free institutional investor.* 
 
 First, let's get the data from BBG.
 
@@ -33,6 +33,79 @@ x=blpDisconnect(conn)
 bbgdat=spread(bbgdat.orig,ticker,PX_LAST)
 bbgdat=bbgdat[!is.na(bbgdat$`M1WDW$GI Index`),]
 bbgdat$date=as.Date(bbgdat$date,format="%Y-%m-%d")
+bbgdat$gdbond=bbgdat[,2]*(100/bbgdat[1,2])
+bbgdat$gdstock=bbgdat[,3]*(100/bbgdat[1,3])
+bbgdat$gdbuyhold=.6*bbgdat$gdstock+.4*bbgdat$gdbond
+bbgdat$ssbuyhold=(.6*bbgdat$gdstock)/bbgdat$gdbuyhold
+
+mustock=diff(log(bbgdat$`M1WDW$GI Index`))
+mubond=diff(log(bbgdat$`LBUSTRUU Index`))
+mubuyhold=diff(log(bbgdat$gdbuyhold))
+mu_nocost=.6*mustock+.4*mubond
+gdnocost=c(100,100*exp(cumsum(mu_nocost)))
+bbgdat$gdnocost=gdnocost
+
+tcost=.002
+
+#calculate a monthly rebalance with trading cost
+rebalfreq=1
+tcostvec=vector()
+gds=gdb=vector()
+gdb[1]=60
+gbs[1]=40
+for (i in 1:length(mustock)) {
+  pb=gdb[i]
+  ps=bds[i]
+  m=i+1
+  if(0==(m%%rebalfreq)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*rebalamt
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  gdb[m]=gdb[i]*exp(mubond[i])
+  gds[m]=gds[i]*exp(mustock[i])
+}
+gdmthly=gdb+gds
+mumthly=diff(log(gdmthly))
+
+#calculate a yearly rebalance with trading cost
+rebalfreq=12
+tcostvec=vector()
+gds=gdb=vector()
+gdb[1]=60
+gbs[1]=40
+for (i in 1:length(mustock)) {
+  pb=gdb[i]
+  ps=bds[i]
+  m=i+1
+  if(0==(m%%rebalfreq)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*rebalamt
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  gdb[m]=gdb[i]*exp(mubond[i])
+  gds[m]=gds[i]*exp(mustock[i])
+}
+gdyrly=gdb+gds
+muyrly=diff(log(gdmthly))
+ssyrly=gds/gdyrly
+
+
+
+
+
+
+
 R2K=diff(log(zoo(bbgdat$'RU20INTR Index',bbgdat$date)))
 gdr2k=exp(cumsum(R2K))
 MSCI_Small=diff(log(zoo(bbgdat$'M1USSC Index',bbgdat$date)))
