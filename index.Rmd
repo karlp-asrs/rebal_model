@@ -41,11 +41,12 @@ bbgdat$ssbuyhold=(.6*bbgdat$gdstock)/bbgdat$gdbuyhold
 mustock=diff(log(bbgdat$`M1WDW$GI Index`))
 mubond=diff(log(bbgdat$`LBUSTRUU Index`))
 mubuyhold=diff(log(bbgdat$gdbuyhold))
-mu_nocost=.6*mustock+.4*mubond
+mu_nocost=log(1+(.6*(-1+exp(mustock)))+(.4*(-1+exp(mubond))))
 gdnocost=c(100,100*exp(cumsum(mu_nocost)))
 bbgdat$gdnocost=gdnocost
 
-tcost=0 #.002
+tcost=.004
+n=length(gdnocost)
 
 #calculate a monthly rebalance with trading cost
 rebalfreq=1
@@ -53,7 +54,7 @@ tcostvec=vector()
 gds=gdb=vector()
 gdb[1]=40
 gds[1]=60
-for (i in 1:length(mustock)) {
+for (i in 1:n) {
   pb=gdb[i]
   ps=gds[i]
   m=i+1
@@ -67,10 +68,13 @@ for (i in 1:length(mustock)) {
   }
   gdb[i]=pb
   gds[i]=ps
-  gdb[m]=gdb[i]*exp(mubond[i])
-  gds[m]=gds[i]*exp(mustock[i])
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
 }
 gdmthly=gdb+gds
+ssmthly=gds/gdmthly
 mumthly=diff(log(gdmthly))
 
 #calculate a yearly rebalance with trading cost
@@ -79,7 +83,7 @@ tcostvec=vector()
 gds=gdb=vector()
 gdb[1]=40
 gds[1]=60
-for (i in 1:length(mustock)) {
+for (i in 1:n) {
   pb=gdb[i]
   ps=gds[i]
   m=i+1
@@ -93,18 +97,60 @@ for (i in 1:length(mustock)) {
   }
   gdb[i]=pb
   gds[i]=ps
-  gdb[m]=gdb[i]*exp(mubond[i])
-  gds[m]=gds[i]*exp(mustock[i])
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
 }
 gdyrly=gdb+gds
 muyrly=diff(log(gdyrly))
 ssyrly=gds/gdyrly
+tcyrly=tcostvec
 
-df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=gdnocost,
-               Mthly_rebal=gdmthly,Yrly_rebal=gdyrly,
-               Buy_hold=bbgdat$gdbuyhold)
+#calculate a quarterly rebalance with trading cost
+rebalfreq=3
+tcostvec=vector()
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  if(0==(m%%rebalfreq)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdqtrly=gdb+gds
+muqtrly=diff(log(gdqtrly))
+ssqtrly=gds/gdqtrly
+tcqtrly=tcostvec
+
+
+df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=1,
+               Mthly_rebal=gdmthly/gdnocost,Yrly_rebal=gdyrly/gdnocost,
+               Qtrly_rebal=gdqtrly/gdnocost,
+               Buy_hold=bbgdat$gdbuyhold/gdnocost)
 df1long=gather(df1,"Strategy","NAV",-Date)
 ggplot(df1long,aes(x=Date,y=NAV,color=Strategy),group_by=Strategy)+geom_line()
+df2=data.frame(Date=bbgdat$date,Eq_Pct_Mthly_rebal=ssmthly,
+               Eq_Pct_Yrly_rebal=ssyrly,
+               Eq_Pct_Qtrly_rebal=ssqtrly,
+               Eq_Pct_Buyhold=bbgdat$ssbuyhold)
+df2long=gather(df2,"Strategy","Equity_Percent",-Date)
+ggplot(df2long,aes(x=Date,y=Equity_Percent,color=Strategy),group_by=Strategy)+
+  geom_line()
 ```
 
 
