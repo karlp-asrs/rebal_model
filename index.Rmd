@@ -11,9 +11,17 @@ Most experts recommend periodic rebalancing of a portfolio.  The advantages of r
 
 Vanguard conducted a helpful study of this concluding, in typical Vanguard fashion, that less is more.  They find rebalancing about once a year captures the benefit and avoids higher costs of increased frequency.  The study is found [here](https://www.vanguard.com/pdf/icrpr.pdf).
 
-We will update this work with more recent data (the Vanguard study uses data ending in 2009) and will consider if trend analysis is beneficial.  We will model a 60/40 portfolio of global stocks and US bonds.  Our objective is to model rebalancing considering transaction costs.  We will review rebalance periods, rebalance bands and trend parameters.  We don't look at taxes assuming a tax free institutional investor.  *Taxes are major consideration for individual investors and this analysis only applies to the much simpler situation of a tax free institutional investor.* 
+We will update this work with more recent data (the Vanguard study uses data ending in 2009) and will consider if trend analysis is beneficial.  We will model a 60/40 portfolio of stocks bonds.  Our objective is to model rebalancing considering transaction costs.  We will review rebalance periods, rebalance bands and trend parameters.  We don't look at taxes assuming a tax free institutional investor.  *Taxes are major consideration for individual investors and this analysis only applies to the simpler situation of a tax free institutional investor.* 
 
-First, let's get the data from BBG.
+## Testing with ACWI global stock index and BBG Agg
+
+First, we will model using the ACWI global stock index.  We will use all available data for the index which commenced in 2001.
+
+### Analysis of rebalance time frames
+
+We will compare rebalance results with rebalance at arbitrary time frames of buy/hold (never rebalance), annual, quarterly and monthly.
+
+We benchmark performance and cost to a monthly costless rebalance which is the customary way for calculating benchmarks.
 
 ```{r, warning=FALSE, message=FALSE, warning=FALSE,echo=FALSE}
 Sys.setenv(JAVA_HOME='')
@@ -42,15 +50,29 @@ mustock=diff(log(bbgdat$`M1WDW$GI Index`))
 mubond=diff(log(bbgdat$`LBUSTRUU Index`))
 mubuyhold=diff(log(bbgdat$gdbuyhold))
 mu_nocost=log(1+(.6*(-1+exp(mustock)))+(.4*(-1+exp(mubond))))
+annmubuyhold=12*mean(mubuyhold-mu_nocost)
+tebuyhold=sqrt(12)*sd(mubuyhold-mu_nocost)
+tcbuyhold=0
 gdnocost=c(100,100*exp(cumsum(mu_nocost)))
 bbgdat$gdnocost=gdnocost
 
 tcost=.004
 n=length(gdnocost)
 
+#calculate three month momentum
+sd3mo=sqrt(3)*sd(mustock)
+stockmo=rep(0,n)
+stockmo[1:3]=NA
+for (i in 4:n) {
+  stockmo[i]=sum(mustock[i-(1:3)])/sd3mo
+}
+
+
+
+
 #calculate a monthly rebalance with trading cost
 rebalfreq=1
-tcostvec=vector()
+tcostvec=rep(0,n)
 gds=gdb=vector()
 gdb[1]=40
 gds[1]=60
@@ -76,10 +98,13 @@ for (i in 1:n) {
 gdmthly=gdb+gds
 ssmthly=gds/gdmthly
 mumthly=diff(log(gdmthly))
+annmumthly=12*mean(mumthly-mu_nocost)
+temthly=sqrt(12)*sd(mumthly-mu_nocost)
+tcmthly=12*mean(tcostvec/gdmthly)
 
 #calculate a yearly rebalance with trading cost
 rebalfreq=12
-tcostvec=vector()
+tcostvec=rep(0,n)
 gds=gdb=vector()
 gdb[1]=40
 gds[1]=60
@@ -106,10 +131,13 @@ gdyrly=gdb+gds
 muyrly=diff(log(gdyrly))
 ssyrly=gds/gdyrly
 tcyrly=tcostvec
+annmuyrly=12*mean(muyrly-mu_nocost)
+teyrly=sqrt(12)*sd(muyrly-mu_nocost)
+tcyrly=12*mean(tcostvec/gdyrly)
 
 #calculate a quarterly rebalance with trading cost
 rebalfreq=3
-tcostvec=vector()
+tcostvec=rep(0,n)
 gds=gdb=vector()
 gdb[1]=40
 gds[1]=60
@@ -136,7 +164,9 @@ gdqtrly=gdb+gds
 muqtrly=diff(log(gdqtrly))
 ssqtrly=gds/gdqtrly
 tcqtrly=tcostvec
-
+annmuqtrly=12*mean(muqtrly-mu_nocost)
+teqtrly=sqrt(12)*sd(muqtrly-mu_nocost)
+tcqtrly=12*mean(tcostvec/gdqtrly)
 
 df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=1,
                Mthly_rebal=gdmthly/gdnocost,Yrly_rebal=gdyrly/gdnocost,
@@ -151,45 +181,271 @@ df2=data.frame(Date=bbgdat$date,Eq_Pct_Mthly_rebal=ssmthly,
 df2long=gather(df2,"Strategy","Equity_Percent",-Date)
 ggplot(df2long,aes(x=Date,y=Equity_Percent,color=Strategy),group_by=Strategy)+
   geom_line()
+df3=data.frame(Strategy=c("Buy Hold","Mthly Rebal","Qtrly Rebal","Annual Rebal"),
+               Excess_Return=100*c(annmubuyhold,annmumthly,annmuqtrly,annmuyrly),
+               Ann_Trading_Cost=100*c(tcbuyhold,tcmthly,tcqtrly,tcyrly),
+               Tracking_Error=100*c(tebuyhold,temthly,teqtrly,teyrly))
+ggplot(df3,aes(x=Strategy,y=Excess_Return,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Tracking_Error,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Ann_Trading_Cost,fill=Strategy))+geom_bar(stat="identity")
+```
+
+### Rebalance bands
+
+Now we will consider a rebalance methodology where the rebalance decision is based on variation from target weight and only rebalance if the portfolio weight variance exceeeds a target amount.  We will test 2%, 5% and 10% permitted variance.
+
+
+```{r, echo=FALSE}
+
+#calculate with 2% permitted variance
+okvar=.02
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if(okvar<abs(svar)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdmthly=gdb+gds
+ssmthly=gds/gdmthly
+mumthly=diff(log(gdmthly))
+annmumthly=12*mean(mumthly-mu_nocost)
+temthly=sqrt(12)*sd(mumthly-mu_nocost)
+tcmthly=12*mean(tcostvec/gdmthly)
+
+#calculate a yearly rebalance with trading cost
+okvar=.05
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if(okvar<abs(svar)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdyrly=gdb+gds
+muyrly=diff(log(gdyrly))
+ssyrly=gds/gdyrly
+tcyrly=tcostvec
+annmuyrly=12*mean(muyrly-mu_nocost)
+teyrly=sqrt(12)*sd(muyrly-mu_nocost)
+tcyrly=12*mean(tcostvec/gdyrly)
+
+#calculate rebal with 10% permitted variance
+okvar=.1
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if(okvar<abs(svar)) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdqtrly=gdb+gds
+muqtrly=diff(log(gdqtrly))
+ssqtrly=gds/gdqtrly
+tcqtrly=tcostvec
+annmuqtrly=12*mean(muqtrly-mu_nocost)
+teqtrly=sqrt(12)*sd(muqtrly-mu_nocost)
+tcqtrly=12*mean(tcostvec/gdqtrly)
+
+df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=1,
+               Two_pct_band=gdmthly/gdnocost,Five_pct_band=gdyrly/gdnocost,
+               Ten_pct_band=gdqtrly/gdnocost)
+df1long=gather(df1,"Strategy","NAV",-Date)
+ggplot(df1long,aes(x=Date,y=NAV,color=Strategy),group_by=Strategy)+geom_line()
+df2=data.frame(Date=bbgdat$date,Eq_Pct_Two_Pct_Band=ssmthly,
+               Eq_Pct_Five_Pct_Band=ssyrly,
+               Eq_Pct_Ten_Pct_Band=ssqtrly)
+df2long=gather(df2,"Strategy","Equity_Percent",-Date)
+ggplot(df2long,aes(x=Date,y=Equity_Percent,color=Strategy),group_by=Strategy)+
+  geom_line()
+df3=data.frame(Strategy=c("Two_Pct_Band","Ten_Pct_Band","Five_Pct_Band"),
+               Excess_Return=100*c(annmumthly,annmuqtrly,annmuyrly),
+               Ann_Trading_Cost=100*c(tcmthly,tcqtrly,tcyrly),
+               Tracking_Error=100*c(temthly,teqtrly,teyrly))
+ggplot(df3,aes(x=Strategy,y=Excess_Return,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Tracking_Error,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Ann_Trading_Cost,fill=Strategy))+geom_bar(stat="identity")
 ```
 
 
 
+### Rebalance bands with a momentum filter
+
+Now we repeat the rebalance bands analysis but with a 3 month momentum.  If you are overweight stocks and you have 3 month momentum > 1, don't rebalance.  Same for downside.
+
 ```{r, echo=FALSE}
-# 
-# R2K=diff(log(zoo(bbgdat$'RU20INTR Index',bbgdat$date)))
-# gdr2k=exp(cumsum(R2K))
-# MSCI_Small=diff(log(zoo(bbgdat$'M1USSC Index',bbgdat$date)))
-# gdmsci=exp(cumsum(MSCI_Small))
-# sp600=diff(log(zoo(bbgdat$'SPTRSMCP Index',bbgdat$date)))
-# gdsp600=exp(cumsum(sp600))
-# delta_return=sp600-R2K
-# roll_one_delta=rollapply(delta_return,12,sum,align="right")
-# roll_one_df=data.frame(Date=index(roll_one_delta),Return=coredata(roll_one_delta))
-# roll_one_df$Month=as.factor(month(roll_one_df$Date))
-# gddiffmsci=gdsp600-gdmsci
-# gddiffr2k=gdsp600-gdr2k
-# gd_df=data.frame(SP600=gdsp600,R2K=gdr2k,MSCI=gdmsci,
-#                  SP600_minus_R2K=gddiffr2k,SP600_minus_MSCI=gddiffmsci)
-# gd_df$Date=as.Date(rownames(gd_df),format="%Y-%m-%d")
-# #ggplot(roll_one_df,aes(x=Date,y=Return))+geom_point()
-# #ggplot(roll_one_df,aes(x=Month,y=Return))+geom_boxplot()
-# #ggplot(gd_df,aes(x=Date,y=gddiff*100))+geom_point()
-# gd_dflong=gather(gd_df,"Index","Growth_of_Dollar",-Date)
-# ggplot(gd_dflong,aes(x=Date,y=Growth_of_Dollar,color=Index),group_by=Index)+geom_line()+
-#   ylab("Growth of Dollar")+ggtitle("Comparative Returns Small Cap Indices")+xlab("")
-# delta_df=data.frame(Date=index(delta_return),Return=coredata(delta_return))
-# delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
-# delta_df$Month=as.factor(month(delta_df$Date))
-# #ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
-# ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
-#   ggtitle("SP600 minus R2K")+ylab("Monthly Return Difference")+xlab("")
-# 
-# mdelta_return=sp600-MSCI_Small
-# delta_df=data.frame(Date=index(mdelta_return),Return=coredata(mdelta_return))
-# delta_df$Date=as.Date(delta_df$Date,format="%Y-%m%d")
-# delta_df$Month=as.factor(month(delta_df$Date))
-# #ggplot(delta_df,aes(x=Month,y=Return))+geom_boxplot()
-# ggplot(delta_df,aes(x=Date,y=Return))+geom_line()+geom_smooth()+
-#   ggtitle("SP600 minus MSCI Small")+ylab("Monthly Return Difference")+xlab("")
+
+#calculate with 2% permitted variance
+okvar=.02
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if((okvar<abs(svar)) &
+     ((svar>0 & stockmo[i]>1) | (svar<0 & stockmo[i]< -1))) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdmthly=gdb+gds
+ssmthly=gds/gdmthly
+mumthly=diff(log(gdmthly))
+annmumthly=12*mean(mumthly-mu_nocost)
+temthly=sqrt(12)*sd(mumthly-mu_nocost)
+tcmthly=12*mean(tcostvec/gdmthly)
+
+#calculate a yearly rebalance with trading cost
+okvar=.05
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if(okvar<abs(svar) &
+     ((svar>0 & stockmo[i]>1) | (svar<0 & stockmo[i]< -1))) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdyrly=gdb+gds
+muyrly=diff(log(gdyrly))
+ssyrly=gds/gdyrly
+tcyrly=tcostvec
+annmuyrly=12*mean(muyrly-mu_nocost)
+teyrly=sqrt(12)*sd(muyrly-mu_nocost)
+tcyrly=12*mean(tcostvec/gdyrly)
+
+#calculate rebal with 10% permitted variance
+okvar=.1
+tcostvec=rep(0,n)
+gds=gdb=vector()
+gdb[1]=40
+gds[1]=60
+for (i in 1:n) {
+  pb=gdb[i]
+  ps=gds[i]
+  m=i+1
+  svar=ps/(ps+pb)-.6
+  if(okvar<abs(svar) &
+     ((svar>0 & stockmo[i]>1) | (svar<0 & stockmo[i]< -1))) {
+    rebalamt=ps-(.6*(ps+pb))
+    pb=pb+rebalamt
+    ps=ps-rebalamt
+    tcostvec[i]=tcost*abs(rebalamt)
+    pb=pb-.4*tcostvec[i]
+    ps=ps-.6*tcostvec[i]
+  }
+  gdb[i]=pb
+  gds[i]=ps
+  if(i<n) {
+    gdb[m]=gdb[i]*exp(mubond[i])
+    gds[m]=gds[i]*exp(mustock[i])
+  }
+}
+gdqtrly=gdb+gds
+muqtrly=diff(log(gdqtrly))
+ssqtrly=gds/gdqtrly
+tcqtrly=tcostvec
+annmuqtrly=12*mean(muqtrly-mu_nocost)
+teqtrly=sqrt(12)*sd(muqtrly-mu_nocost)
+tcqtrly=12*mean(tcostvec/gdqtrly)
+
+df1=data.frame(Date=bbgdat$date,Mthly_rebal_costless=1,
+               Two_pct_band=gdmthly/gdnocost,Five_pct_band=gdyrly/gdnocost,
+               Ten_pct_band=gdqtrly/gdnocost)
+df1long=gather(df1,"Strategy","NAV",-Date)
+ggplot(df1long,aes(x=Date,y=NAV,color=Strategy),group_by=Strategy)+geom_line()
+df2=data.frame(Date=bbgdat$date,Eq_Pct_Two_Pct_Band=ssmthly,
+               Eq_Pct_Five_Pct_Band=ssyrly,
+               Eq_Pct_Ten_Pct_Band=ssqtrly)
+df2long=gather(df2,"Strategy","Equity_Percent",-Date)
+ggplot(df2long,aes(x=Date,y=Equity_Percent,color=Strategy),group_by=Strategy)+
+  geom_line()
+df3=data.frame(Strategy=c("Two_Pct_Band","Ten_Pct_Band","Five_Pct_Band"),
+               Excess_Return=100*c(annmumthly,annmuqtrly,annmuyrly),
+               Ann_Trading_Cost=100*c(tcmthly,tcqtrly,tcyrly),
+               Tracking_Error=100*c(temthly,teqtrly,teyrly))
+ggplot(df3,aes(x=Strategy,y=Excess_Return,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Tracking_Error,fill=Strategy))+geom_bar(stat="identity")
+ggplot(df3,aes(x=Strategy,y=Ann_Trading_Cost,fill=Strategy))+geom_bar(stat="identity")
 ```
